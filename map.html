@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>板橋租屋地圖 - 寬幅全景半螢幕版</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #f4f4f5;
+        }
+
+        .app-container {
+            display: flex;
+            flex-direction: column;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        /* Map takes exactly 50% of viewport height when card is open */
+        .map-frame {
+            height: 100vh;
+            width: 100%;
+            position: relative;
+            transition: height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .app-container.split-view .map-frame {
+            height: 50vh;
+        }
+
+        #map {
+            width: 100%;
+            height: 100%;
+            background-color: #f4f4f5;
+        }
+
+        /* Bottom Info Panel: Occupies exactly 50% of the mobile phone screen */
+        .hud-panel {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 50vh;
+            background: #ffffff;
+            border-top-left-radius: 24px;
+            border-top-right-radius: 24px;
+            padding: 16px;
+            box-shadow: 0 -10px 30px rgba(0,0,0,0.15);
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            border-top: 1px solid #e4e4e7;
+            transform: translateY(100%);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .app-container.split-view .hud-panel {
+            transform: translateY(0);
+        }
+
+        /* 1800x500 Panoramic Image Holder Box */
+        .img-panoramic-container {
+            width: 100%;
+            height: 42%; /* Controls its ratio within the half-screen card */
+            background-color: #18181b; /* Dark backdrop prevents white borders flashing */
+            border-radius: 14px;
+            overflow: hidden;
+            position: relative;
+            border: 1px solid #d4d4d8;
+            box-shadow: inset 0 0 20px rgba(0,0,0,0.2);
+        }
+
+        .img-panoramic-container img {
+            width: 100%;
+            height: 100%;
+            /* 'contain' ensures your full 1800px width is displayed without any side-cropping */
+            object-fit: contain; 
+        }
+
+        .img-label {
+            position: absolute;
+            bottom: 6px;
+            right: 8px;
+            background: rgba(9, 9, 11, 0.75);
+            color: #f4f4f5;
+            font-size: 0.7rem;
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+
+        /* Bottom Details Content Stack Frame */
+        .details-stack {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            overflow-y: auto; /* Fallback safetynet scroll */
+        }
+
+        .meta-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+        }
+
+        .title-index {
+            font-size: 0.85rem;
+            font-weight: 800;
+            background: #0070bc;
+            color: white;
+            padding: 3px 10px;
+            border-radius: 6px;
+        }
+
+        .price {
+            font-size: 1.5rem;
+            font-weight: 900;
+            color: #dc2626;
+        }
+
+        .layout-desc {
+            font-size: 1.05rem;
+            color: #18181b;
+            font-weight: 700;
+        }
+
+        .address-text {
+            font-size: 0.85rem;
+            color: #71717a;
+            margin: 2px 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .warning-tag {
+            font-size: 0.75rem;
+            color: #9f1239;
+            background: #ffe4e6;
+            padding: 2px 8px;
+            border-radius: 6px;
+            width: fit-content;
+            font-weight: 600;
+            margin-top: 2px;
+        }
+
+        .go-btn {
+            display: block;
+            text-align: center;
+            background: linear-gradient(135deg, #0070bc, #005a9c);
+            color: white;
+            text-decoration: none;
+            font-size: 0.95rem;
+            font-weight: 700;
+            padding: 12px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 112, 188, 0.2);
+            margin-top: 4px;
+        }
+        
+        .go-btn:active { background: #004475; }
+
+        .radar-status {
+            position: absolute;
+            top: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.96);
+            color: #18181b;
+            padding: 10px 24px;
+            border-radius: 30px;
+            font-size: 0.85rem;
+            font-weight: 700;
+            z-index: 1000;
+            pointer-events: none;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            border: 1px solid #e4e4e7;
+        }
+
+        .station-lbl-blue {
+            background: transparent !important; border: none !important; box-shadow: none !important;
+            color: #005a9c !important; font-weight: 800 !important; font-size: 11px !important;
+            text-shadow: 2px 2px 0px #fff, -2px -2px 0px #fff, 2px -2px 0px #fff, -2px 2px 0px #fff;
+        }
+        .station-lbl-yellow {
+            background: transparent !important; border: none !important; box-shadow: none !important;
+            color: #b7791f !important; font-weight: 800 !important; font-size: 11px !important;
+            text-shadow: 2px 2px 0px #fff, -2px -2px 0px #fff, 2px -2px 0px #fff, -2px 2px 0px #fff;
+        }
+    </style>
+</head>
+<body>
+
+<div id="appContainer" class="app-container">
+    <div class="map-frame">
+        <div id="map"></div>
+        <div class="radar-status">🚇 寬幅大圖模式：點選地圖藍點查看房源</div>
+
+        <div id="hudPanel" class="hud-panel">
+            <div class="img-panoramic-container">
+                <img id="houseImg" src="" alt="房屋全景照">
+                <div class="img-label" id="imgFilename">1.png</div>
+            </div>
+            
+            <div class="details-stack">
+                <div>
+                    <div class="meta-top">
+                        <span class="title-index" id="houseNo">物件 #1</span>
+                        <span class="price" id="housePrice">NT$ --</span>
+                    </div>
+                    <div class="layout-desc" id="houseLayout">--房--廳--衛</div>
+                    <div class="address-text" id="houseAddr">載入中...</div>
+                    <div id="houseAlert" class="warning-tag" style="display:none;"></div>
+                </div>
+                <a href="#" target="_blank" id="houseLink" class="go-btn">🌐 進入 591 房屋原始詳情頁面</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+<script>
+    const houses = [
+        { no: 1, address: "板橋區大智街71巷", cash: 25000, r: 2, h: 1, b: 1, link: "https://rent.591.com.tw/21392975", lat: 25.0118, lng: 121.4552, img: "1.png" },
+        { no: 2, address: "板橋區懷德街", cash: 15800, r: 1, h: 1, b: 1, link: "https://rent.591.com.tw/21395076", lat: 25.0270, lng: 121.4740, img: "2.png" },
+        { no: 3, address: "板橋區長安街261巷", cash: 14799, r: 1, h: 1, b: 1, link: "https://rent.591.com.tw/21379121", lat: 25.0135, lng: 121.4682, img: "3.png" },
+        { no: 4, address: "板橋區懷仁街", cash: 25888, r: 2, h: 1, b: 2, link: "https://rent.591.com.tw/21351445", lat: 25.0162, lng: 121.4725, img: "4.png", problem: "天花板問題" },
+        { no: 5, address: "板橋區民生路三段", cash: 16500, r: 1, h: 1, b: 1, link: "https://rent.591.com.tw/21380639", lat: 25.0261, lng: 121.4660, img: "5.png" },
+        { no: 6, address: "板橋區四維路", cash: 25800, r: 2, h: 1, b: 1, link: "https://rent.591.com.tw/21369230", lat: 25.0232, lng: 121.4635, img: "6.png" },
+        { no: 7, address: "板橋區大明街20巷", cash: 22800, r: 2, h: 1, b: 1, link: "https://rent.591.com.tw/21315433", lat: 25.0082, lng: 121.4560, img: "7.png" },
+        { no: 8, address: "板橋區重慶路", cash: 24500, r: 2, h: 1, b: 1, link: "https://rent.591.com.tw/21304493", lat: 25.0010, lng: 121.4622, img: "8.png" },
+        { no: 9, address: "板橋區中正路(A)", cash: 25000, r: 2, h: 1, b: 1, link: "https://rent.591.com.tw/21333467", lat: 25.0185, lng: 121.4510, img: "9.png" },
+        { no: 10, address: "板橋區民權路", cash: 25888, r: 2, h: 1, b: 1, link: "https://rent.591.com.tw/21289319", lat: 25.0130, lng: 121.4605, img: "10.png" },
+        { no: 11, address: "板橋區長安街331巷93弄1號", cash: 17000, r: 1, h: 1, b: 1, link: "https://rent.591.com.tw/15280176", lat: 25.0142, lng: 121.4690, img: "11.png" },
+        { no: 12, address: "板橋區長江路一段", cash: 21000, r: 2, h: 1, b: 1, link: "https://rent.591.com.tw/21370068", lat: 25.0298, lng: 121.4610, img: "12.png" },
+        { no: 13, address: "板橋區中正路(B)", cash: 23800, r: 2, h: 1, b: 1, link: "https://rent.591.com.tw/18874145", lat: 25.0162, lng: 121.4485, img: "13.png" },
+        { no: 14, address: "板橋區大觀路二段174巷", cash: 26000, r: 2, h: 1, b: 1, link: "https://rent.591.com.tw/21263959", lat: 25.0035, lng: 121.4402, img: "14.png" }
+    ];
+
+    const map = L.map('map', {
+        center: [25.01521, 121.46824],
+        zoom: 15,
+        zoomControl: false,
+        attributionControl: false
+    });
+
+    // Minimal Base Google Style Layers
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png', { maxZoom: 20 }).addTo(map);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png', { maxZoom: 20, opacity: 0.85 }).addTo(map);
+
+    // Bannan Line fully fleshed out path
+    const smoothBannanRoute = [
+        [24.9880, 121.4200], [24.9986, 121.4288], [25.0123, 121.4557], 
+        [25.0144, 121.4623], [25.0261, 121.4669], [25.0363, 121.4721], 
+        [25.0423, 121.4842], [25.0445, 121.5000]
+    ];
+    L.polyline(smoothBannanRoute, { color: '#0070bc', weight: 6, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }).addTo(map);
+
+    // Circular Line fully fleshed out path
+    const smoothCircularRoute = [
+        [24.9960, 121.4610], [25.0055, 121.4628], [25.0146, 121.4635], 
+        [25.0259, 121.4682], [25.0395, 121.4695], [25.0465, 121.4645]
+    ];
+    L.polyline(smoothCircularRoute, { color: '#ffb300', weight: 6, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }).addTo(map);
+
+    const blueStations = [
+        { name: "亞東醫院站", coords: [25.0001, 121.4459] },
+        { name: "府中站", coords: [25.0123, 121.4557] },
+        { name: "板橋站(藍)", coords: [25.0144, 121.4618] },
+        { name: "新埔站", coords: [25.0261, 121.4669] },
+        { name: "江子翠站", coords: [25.0363, 121.4721] }
+    ];
+
+    const yellowStations = [
+        { name: "板新站", coords: [25.0055, 121.4628] },
+        { name: "板橋站(黃)", coords: [25.0148, 121.4638] },
+        { name: "新埔民生站", coords: [25.0259, 121.4682] }
+    ];
+
+    blueStations.forEach(st => {
+        L.circleMarker(st.coords, { radius: 5, fillColor: "#ffffff", color: "#0070bc", weight: 3, opacity: 1, fillOpacity: 1 })
+         .addTo(map).bindTooltip(st.name, { permanent: true, direction: 'top', offset: [0, -5], className: 'station-lbl-blue' });
+    });
+
+    yellowStations.forEach(st => {
+        L.circleMarker(st.coords, { radius: 5, fillColor: "#ffffff", color: "#ffb300", weight: 3, opacity: 1, fillOpacity: 1 })
+         .addTo(map).bindTooltip(st.name, { permanent: true, direction: 'right', offset: [5, 0], className: 'station-lbl-yellow' });
+    });
+
+    // Execute Layout Toggle and Inject Property Selection Data
+    function processSelection(house) {
+        houses.forEach(h => h.leafletMarker.setStyle({ fillColor: "#2563eb", radius: 9, weight: 2 }));
+        house.leafletMarker.setStyle({ fillColor: "#dc2626", radius: 14, weight: 3 });
+
+        document.getElementById('houseNo').innerText = `物件 #${house.no}`;
+        document.getElementById('housePrice').innerText = `NT$ ${house.cash.toLocaleString()}`;
+        document.getElementById('houseLayout').innerText = `${house.r}房 / ${house.h}廳 / ${house.b}衛`;
+        document.getElementById('houseAddr').innerText = house.address;
+        document.getElementById('imgFilename').innerText = house.img;
+        
+        document.getElementById('houseImg').src = house.img;
+        document.getElementById('houseLink').href = house.link;
+
+        const tagAlert = document.getElementById('houseAlert');
+        if (house.problem) {
+            tagAlert.innerText = `⚠ 備註: ${house.problem}`;
+            tagAlert.style.display = 'block';
+        } else {
+            tagAlert.style.display = 'none';
+        }
+
+        // Toggle app-container into 50/50 split-view viewport mode
+        document.getElementById('appContainer').classList.add('split-view');
+        
+        // Recalculate map boundary lines safely to adjust center position after resizing
+        setTimeout(() => { map.invalidateSize(); }, 300);
+    }
+
+    houses.forEach(house => {
+        const pin = L.circleMarker([house.lat, house.lng], { radius: 9, fillColor: "#2563eb", color: "#ffffff", weight: 2, opacity: 1, fillOpacity: 0.95 }).addTo(map);
+        pin.on('click', (e) => {
+            L.DomEvent.stopPropagation(e);
+            processSelection(house);
+        });
+        house.leafletMarker = pin;
+    });
+
+    // Reset Layout if Empty Canvas Space on Map is tapped
+    map.on('click', () => {
+        document.getElementById('appContainer').classList.remove('split-view');
+        houses.forEach(h => h.leafletMarker.setStyle({ fillColor: "#2563eb", radius: 9, weight: 2 }));
+        setTimeout(() => { map.invalidateSize(); }, 300);
+    });
+</script>
+</body>
+</html>
