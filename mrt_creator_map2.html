@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>板橋租屋地圖 - 多媒體動態地標路網規劃器</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    
+    <style>
+        :root {
+            --map-zoom-scale: 1;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #f4f4f5;
+        }
+
+        .app-container {
+            display: flex;
+            flex-direction: column;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        .map-frame {
+            height: 100vh;
+            width: 100%;
+            position: relative;
+            transition: height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .app-container.split-view .map-frame {
+            height: 50vh;
+        }
+
+        #map {
+            width: 100%;
+            height: 100%;
+            background-color: #f4f4f5;
+        }
+
+        /* 控制面板 */
+        .drawing-dashboard {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            background: rgba(255, 255, 255, 0.98);
+            border-radius: 14px;
+            padding: 12px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            border: 1px solid #e4e4e7;
+            width: 210px;
+        }
+
+        .search-container {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 4px;
+        }
+
+        .search-input {
+            flex: 1;
+            padding: 6px 10px;
+            border-radius: 8px;
+            border: 1px solid #d4d4d8;
+            font-size: 0.8rem;
+            outline: none;
+        }
+        .search-input:focus { border-color: #0070bc; }
+
+        .dash-btn {
+            background: #27272a;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            transition: all 0.2s;
+        }
+
+        .dash-btn:hover { background: #3f3f46; }
+        .dash-btn.accent { background: #0070bc; }
+        .dash-btn.accent:hover { background: #005a9c; }
+        .dash-btn.branch { background: #10b981; }
+        .dash-btn.branch:hover { background: #059669; }
+        
+        .dash-btn.text-mode { background: #8b5cf6; }
+        .dash-btn.text-mode:hover { background: #7c3aed; }
+        .dash-btn.text-mode.active { background: #ec4899; box-shadow: 0 0 8px rgba(236,72,153,0.5); }
+        
+        .dash-btn.landmark-mode { background: #06b6d4; }
+        .dash-btn.landmark-mode:hover { background: #0891b2; }
+        .dash-btn.landmark-mode.active { background: #ec4899; box-shadow: 0 0 8px rgba(236,72,153,0.5); }
+
+        .dash-btn.lock-toggle { background: #f59e0b; color: #18181b; }
+        .dash-btn.lock-toggle:hover { background: #d97706; }
+        .dash-btn.lock-toggle.locked { background: #3f3f46; color: #f4f4f5; border: 1px solid #71717a; }
+
+        .dash-btn.danger { background: #ef4444; }
+        .dash-btn.danger:hover { background: #dc2626; }
+
+        .line-status-tag {
+            font-size: 0.72rem; padding: 4px 8px; border-radius: 6px; background: #f4f4f5;
+            border: 1px solid #e4e4e7; font-weight: 700; text-align: center; margin-top: 4px;
+        }
+
+        #fileInput { display: none; }
+
+        /* 捷運站標籤 */
+        .station-lbl-blue {
+            background: transparent !important; border: none !important; box-shadow: none !important;
+            color: #18181b !important; font-weight: 800 !important; font-size: calc(11px * var(--map-zoom-scale)) !important;
+            text-shadow: 2px 2px 0px #fff, -2px -2px 0px #fff; transition: font-size 0.1s linear;
+        }
+
+        /* 文字方塊樣式 */
+        .zoom-responsive-textbox {
+            background: transparent !important; border: none !important; box-shadow: none !important;
+            display: flex !important; align-items: center !important; justify-content: left !important; white-space: nowrap !important;
+        }
+        .zoom-responsive-textbox::before {
+            content: ''; display: inline-block; width: calc(6px * var(--map-zoom-scale)); height: calc(6px * var(--map-zoom-scale));
+            min-width: 4px; min-height: 4px; background-color: #8b5cf6; border: calc(1.5px * var(--map-zoom-scale)) solid #fff;
+            border-radius: 50%; box-shadow: 0 0 4px rgba(0,0,0,0.3); margin-right: 6px; flex-shrink: 0;
+        }
+        .zoom-responsive-textbox .txt-content {
+            font-size: calc(var(--base-size, 14px) * var(--map-zoom-scale)) !important; font-weight: 800 !important; color: #4c1d95 !important;
+            text-shadow: 2px 2px 0px #fff, -2px -2px 0px #fff, 2px -2px 0px #fff, -2px 2px 0px #fff; cursor: move !important;
+            transition: font-size 0.1s linear; background: rgba(255, 255, 255, 0.4); padding: 1px 4px; border-radius: 4px;
+        }
+
+        /* ⚡ 升級版地標複合樣式（確保絕對正方形與可愛動畫效果） */
+        .custom-landmark-node {
+            background: transparent !important; border: none !important; box-shadow: none !important;
+            display: flex !important; flex-direction: column !important; align-items: center !important;
+            justify-content: flex-end !important; overflow: visible !important;
+        }
+
+        /* ⚡ 搖晃旋與轉動畫定義（總長 2s：前 1.5s 靜止，後 0.5s 快速晃動） */
+        @keyframes cute-shake {
+            0%, 75% { transform: rotate(0deg); } /* 0% 到 75% (即 0s 到 1.5s) 完全靜止 */
+            77% { transform: rotate(-4deg); }
+            81% { transform: rotate(4deg); }
+            85% { transform: rotate(-4deg); }
+            89% { transform: rotate(4deg); }
+            93% { transform: rotate(-2deg); }
+            97% { transform: rotate(2deg); }
+            100% { transform: rotate(0deg); } /* 1.5s 到 2.0s 快速擺動後回正 */
+        }
+
+        /* 地標相片外框：嚴格維持 1:1 圓角正方形 */
+        .landmark-img-frame {
+            width: calc(var(--img-w, 50px) * var(--map-zoom-scale)) !important;
+            height: calc(var(--img-w, 50px) * var(--map-zoom-scale)) !important;
+            aspect-ratio: 1 / 1 !important; /* 🔥 萬無一失的絕對正方形保護 */
+            min-width: 15px; min-height: 15px;
+            border-radius: 12px; /* 圓角效果 */
+            border: 2.5px solid #fff;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.25);
+            background-color: #e4e4e7;
+            object-fit: cover !important; /* 避免相片內部扭曲 */
+            margin-bottom: 2px;
+            flex-shrink: 0;
+            
+            /* 🔥 每 2 秒無限循環、快速旋轉搖晃動畫 */
+            animation: cute-shake 2s ease-in-out infinite;
+            transform-origin: center bottom; /* 以相片底部為軸心擺動，看起來更生動 */
+            transition: width 0.1s, height 0.1s;
+        }
+
+        /* 地標名稱 */
+        .landmark-title {
+            font-size: calc(var(--text-size, 12px) * var(--map-zoom-scale)) !important;
+            font-weight: 800 !important; color: #0891b2 !important;
+            text-shadow: 2px 2px 0px #fff, -2px -2px 0px #fff, 2px -2px 0px #fff, -2px 2px 0px #fff;
+            white-space: nowrap !important; margin-bottom: 2px; background: rgba(255,255,255,0.6);
+            padding: 0px 4px; border-radius: 4px; transition: font-size 0.1s;
+        }
+
+        /* 地標底層基點 */
+        .landmark-dot-core {
+            width: calc(8px * var(--map-zoom-scale)); height: calc(8px * var(--map-zoom-scale));
+            min-width: 5px; min-height: 5px; background-color: #06b6d4; border: 1.5px solid #fff;
+            border-radius: 50%; box-shadow: 0 0 4px rgba(0,0,0,0.4); flex-shrink: 0; transition: width 0.1s, height 0.1s;
+        }
+
+        /* 房屋資訊面板 */
+        .hud-panel {
+            position: fixed; bottom: 0; left: 0; right: 0; height: 50vh; background: #ffffff;
+            border-top-left-radius: 24px; border-top-right-radius: 24px; padding: 16px;
+            box-shadow: 0 -10px 30px rgba(0,0,0,0.15); z-index: 1000; display: flex;
+            flex-direction: column; gap: 12px; border-top: 1px solid #e4e4e7;
+            transform: translateY(100%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .app-container.split-view .hud-panel { transform: translateY(0); }
+        .img-panoramic-container { width: 100%; height: 42%; background-color: #18181b; border-radius: 14px; overflow: hidden; position: relative; border: 1px solid #d4d4d8; }
+        .img-panoramic-container img { width: 100%; height: 100%; object-fit: contain; }
+        .img-label { position: absolute; bottom: 6px; right: 8px; background: rgba(9, 9, 11, 0.75); color: #f4f4f5; font-size: 0.7rem; padding: 3px 8px; border-radius: 6px; font-weight: 600; }
+        .details-stack { flex: 1; display: flex; flex-direction: column; justify-content: space-between; overflow-y: auto; }
+        .meta-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+        .title-index { font-size: 0.85rem; font-weight: 800; background: #0070bc; color: white; padding: 3px 10px; border-radius: 6px; }
+        .price { font-size: 1.5rem; font-weight: 900; color: #dc2626; }
+        .layout-desc { font-size: 1.05rem; color: #18181b; font-weight: 700; }
+        .address-text { font-size: 0.85rem; color: #71717a; margin: 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .go-btn { display: block; text-align: center; background: linear-gradient(135deg, #0070bc, #005a9c); color: white; text-decoration: none; font-size: 0.95rem; font-weight: 700; padding: 12px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0, 112, 188, 0.2); }
+        
+        .radar-status {
+            position: absolute; top: 16px; left: 50%; transform: translateX(-50%); background: rgba(255, 255, 255, 0.96);
+            color: #18181b; padding: 10px 24px; border-radius: 30px; font-size: 0.82rem; font-weight: 700; z-index: 999;
+            pointer-events: none; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid #e4e4e7; text-align: center; white-space: nowrap;
+        }
+    </style>
+</head>
+<body>
+
+<div id="appContainer" class="app-container">
+    <div class="map-frame">
+        <div id="map"></div>
+        
+        <div class="drawing-dashboard">
+            <div class="search-container">
+                <input type="text" id="querySearch" class="search-input" placeholder="🔍 輸入中英文地址/地名..." onkeydown="if(event.key==='Enter') searchLocation()">
+                <button class="dash-btn accent" style="padding:6px 10px;" onclick="searchLocation()">Go</button>
+            </div>
+            
+            <button class="dash-btn lock-toggle" id="btnLockToggle" onclick="toggleGridLock()">🔓 Grid Editable</button>
+            
+            <button class="dash-btn branch" onclick="addNewBranch()">🌿 Add New Branch</button>
+            <button class="dash-btn text-mode" id="btnTextMode" onclick="toggleTextMode()">📝 Add Textbox</button>
+            <button class="dash-btn landmark-mode" id="btnLandmarkMode" onclick="toggleLandmarkMode()">🖼️ Add Landmark</button>
+            
+            <hr style="border: 0; border-top: 1px solid #e4e4e7; margin: 2px 0;">
+            <button class="dash-btn accent" onclick="triggerFileLoad()">📂 Load Network</button>
+            <input type="file" id="fileInput" accept=".json" onchange="loadCustomJson(event)">
+            <button class="dash-btn" onclick="exportNetwork()">💾 Save Network</button>
+            <button class="dash-btn danger" onclick="clearNetwork()">🗑️ Reset Grid</button>
+            <div id="currentLineStatus" class="line-status-tag">當前線路：<span id="statusColorBox" style="display:inline-block; width:12px; height:12px; background:#0070bc; vertical-align:middle; border-radius:3px; margin-left:4px;"></span></div>
+        </div>
+
+        <div class="radar-status" id="radarStatusText">🔓 編輯模式 | 左鍵: 延伸軌道 | 右鍵: 設起點分叉 | 雙擊: 命名車站</div>
+
+        <div id="hudPanel" class="hud-panel">
+            <div class="img-panoramic-container">
+                <img id="houseImg" src="" alt="房屋全景照">
+                <div class="img-label" id="imgFilename">1.png</div>
+            </div>
+            <div class="details-stack">
+                <div>
+                    <div class="meta-top">
+                        <span class="title-index" id="houseNo">物件 #1</span>
+                        <span class="price" id="housePrice">NT$ --</span>
+                    </div>
+                    <div class="layout-desc" id="houseLayout">--房--廳--衛</div>
+                    <div class="address-text" id="houseAddr">載入中...</div>
+                </div>
+                <a href="#" target="_blank" id="houseLink" class="go-btn">🌐 進入 591 房屋原始詳情頁面</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+<script>
+    const houses = [
+        { no: 1, address: "板橋區大智街71巷", cash: 25000, r: 2, h: 1, b: 1, link: "https://rent.591.com.tw/21392975", lat: 25.0118, lng: 121.4552, img: "1.png" },
+        { no: 2, address: "板橋區懷德街", cash: 15800, r: 1, h: 1, b: 1, link: "https://rent.591.com.tw/21395076", lat: 25.0270, lng: 121.4740, img: "2.png" },
+        { no: 3, address: "板橋區長安街261巷", cash: 14799, r: 1, h: 1, b: 1, link: "https://rent.591.com.tw/21379121", lat: 25.0135, lng: 121.4682, img: "3.png" }
+    ];
+
+    const map = L.map('map', {
+        center: [25.01521, 121.46824], zoom: 15, zoomControl: false, attributionControl: false, doubleClickZoom: false 
+    });
+
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png', { maxZoom: 20 }).addTo(map);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png', { maxZoom: 20, opacity: 0.85 }).addTo(map);
+
+    // 數據儲存庫
+    let masterNodes = [];       
+    let metroLines = [{ id: "line_0", color: "#0070bc", nodeIds: [], polyline: null }];
+    let customTextboxes = [];   
+    let customLandmarks = [];   
+    
+    let activeLineId = "line_0";
+    let activeNodeId = null;
+    let nodeCounter = 0;
+    let textCounter = 0;
+    let landmarkCounter = 0;     
+    
+    let isTextModeActive = false;
+    let isLandmarkModeActive = false; 
+    let isGridLocked = false; 
+
+    metroLines[0].polyline = L.polyline([], { color: '#0070bc', weight: 5, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }).addTo(map);
+
+    function toggleGridLock() {
+        isGridLocked = !isGridLocked;
+        const lockBtn = document.getElementById('btnLockToggle');
+        const radarTxt = document.getElementById('radarStatusText');
+        if (isGridLocked) {
+            lockBtn.classList.add('locked'); lockBtn.innerText = "🔒 Grid Locked";
+            radarTxt.innerText = "🔒 唯讀模式 | 路網已安全鎖定，無法新增、變更或拖曳點位";
+            if (isTextModeActive) toggleTextMode();
+            if (isLandmarkModeActive) toggleLandmarkMode();
+        } else {
+            lockBtn.classList.remove('locked'); lockBtn.innerText = "🔓 Grid Editable";
+            radarTxt.innerText = "🔓 編輯模式 | 左鍵: 延伸軌道 | 右鍵: 設起點分叉 | 雙擊: 命名車站";
+        }
+        refreshAllMarkerStyles();
+    }
+
+    function syncZoomScale() {
+        const scaleFactor = Math.pow(1.3, map.getZoom() - 15);
+        document.documentElement.style.setProperty('--map-zoom-scale', scaleFactor);
+        metroLines.forEach(line => { if (line.polyline) line.polyline.setStyle({ weight: Math.max(2, 5 * scaleFactor) }); });
+    }
+    map.on('zoomend', syncZoomScale);
+    syncZoomScale();
+
+    function searchLocation() {
+        const query = document.getElementById('querySearch').value;
+        if (!query || query.trim() === "") return;
+        fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`)
+            .then(res => res.json())
+            .then(data => {
+                if (data && data.length > 0) map.setView([parseFloat(data[0].lat), parseFloat(data[0].lon)], 16);
+                else alert("未尋獲此處。");
+            }).catch(() => alert("搜尋異常。"));
+    }
+
+    function toggleTextMode() {
+        if (isGridLocked) { alert("請先解鎖地圖再啟用文字方塊。"); return; }
+        isTextModeActive = !isTextModeActive;
+        if (isTextModeActive && isLandmarkModeActive) toggleLandmarkMode(); 
+        const btn = document.getElementById('btnTextMode');
+        if (isTextModeActive) { btn.classList.add('active'); btn.innerText = "📍 Click to Add Text"; }
+        else { btn.classList.remove('active'); btn.innerText = "📝 Add Textbox"; }
+    }
+
+    function toggleLandmarkMode() {
+        if (isGridLocked) { alert("請先解鎖地圖再啟用地標標記。"); return; }
+        isLandmarkModeActive = !isLandmarkModeActive;
+        if (isLandmarkModeActive && isTextModeActive) toggleTextMode(); 
+        const btn = document.getElementById('btnLandmarkMode');
+        if (isLandmarkModeActive) { btn.classList.add('active'); btn.innerText = "📍 Click to Place Landmark"; }
+        else { btn.classList.remove('active'); btn.innerText = "🖼️ Add Landmark"; }
+    }
+
+    function addNewBranch() {
+        if (isGridLocked) { alert("地圖鎖定中，無法新增分支。"); return; }
+        const hexColor = prompt("請輸入新分支線路的顏色:", "#10b981");
+        if (!hexColor || hexColor.trim() === "") return;
+        const newLineId = "line_" + Date.now();
+        const lineObj = {
+            id: newLineId, color: hexColor.trim(), nodeIds: [],
+            polyline: L.polyline([], { color: hexColor.trim(), weight: 5, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }).addTo(map)
+        };
+        if (activeNodeId !== null) lineObj.nodeIds.push(activeNodeId);
+        metroLines.push(lineObj); activeLineId = newLineId;
+        document.getElementById('statusColorBox').style.backgroundColor = lineObj.color;
+        updateAllPolylines(); refreshAllMarkerStyles(); syncZoomScale();
+    }
+
+    function updateAllPolylines() {
+        metroLines.forEach(line => {
+            const coordinates = line.nodeIds.map(nid => {
+                const node = masterNodes.find(n => n.id === nid); return node ? node.coords : null;
+            }).filter(c => c !== null);
+            line.polyline.setLatLngs(coordinates);
+        });
+    }
+
+    // 地圖點擊主監聽
+    map.on('click', (e) => {
+        if (document.getElementById('appContainer').classList.contains('split-view')) {
+            document.getElementById('appContainer').classList.remove('split-view');
+            houses.forEach(h => h.leafletMarker.setStyle({ fillColor: "#2563eb", radius: 9, weight: 2 }));
+            setTimeout(() => { map.invalidateSize(); }, 300); return;
+        }
+
+        if (isGridLocked) return;
+        const coords = [e.latlng.lat, e.latlng.lng];
+
+        if (isTextModeActive) {
+            const txt = prompt("請輸入標籤文字內容:");
+            if (!txt || txt.trim() === "") { toggleTextMode(); return; }
+            textCounter++;
+            const textObj = { id: "text_" + textCounter, text: txt.trim(), coords: coords, size: 14, marker: null };
+            customTextboxes.push(textObj); createTextboxLayer(textObj); toggleTextMode(); return;
+        }
+
+        if (isLandmarkModeActive) {
+            const name = prompt("請輸入地標名稱 (例如: 板橋大遠百):");
+            if (!name || name.trim() === "") { toggleLandmarkMode(); return; }
+            const imgUrl = prompt("請貼上地標圖片網址連結:", "https://picsum.photos/150");
+            if (!imgUrl) { toggleLandmarkMode(); return; }
+
+            landmarkCounter++;
+            const landmarkObj = {
+                id: "landmark_" + landmarkCounter,
+                name: name.trim(),
+                imgUrl: imgUrl.trim(),
+                imgWidth: 50,  
+                textSize: 12,  
+                coords: coords,
+                marker: null
+            };
+            customLandmarks.push(landmarkObj);
+            createLandmarkLayer(landmarkObj);
+            toggleLandmarkMode();
+            return;
+        }
+
+        // 常規軌道建立
+        nodeCounter++;
+        const newNodeId = "node_" + nodeCounter;
+        const nodeObj = { id: newNodeId, type: 'pivot', coords: coords, name: '', marker: null };
+        masterNodes.push(nodeObj); createNodeMarkerLayer(nodeObj);
+
+        const currentLine = metroLines.find(l => l.id === activeLineId);
+        if (!currentLine) return;
+        if (activeNodeId === null) { currentLine.nodeIds.push(newNodeId); } 
+        else {
+            const anchorIdx = currentLine.nodeIds.indexOf(activeNodeId);
+            if (anchorIdx > -1) currentLine.nodeIds.splice(anchorIdx + 1, 0, newNodeId);
+            else { currentLine.nodeIds.push(activeNodeId); currentLine.nodeIds.push(newNodeId); }
+        }
+        activeNodeId = newNodeId; updateAllPolylines(); refreshAllMarkerStyles();
+    });
+
+    // 建立地標圖層（包含完美正方形與可愛2秒定時震動動畫）
+    function createLandmarkLayer(lmObj) {
+        const generateHtml = (obj) => `
+            <img class="landmark-img-frame" src="${obj.imgUrl}" style="--img-w: ${obj.imgWidth}px;" alt="pic">
+            <div class="landmark-title" style="--text-size: ${obj.textSize}px;">${obj.name}</div>
+            <div class="landmark-dot-core"></div>
+        `;
+
+        const lmIcon = L.divIcon({
+            className: 'custom-landmark-node',
+            html: generateHtml(lmObj),
+            iconSize: [160, 160], 
+            iconAnchor: [80, 155] 
+        });
+
+        const lmMarker = L.marker(lmObj.coords, { icon: lmIcon }).addTo(map);
+        lmObj.marker = lmMarker;
+
+        lmMarker.on('click', (e) => { L.DomEvent.stopPropagation(e); });
+
+        // 雙擊：自訂地標屬性與大小
+        lmMarker.on('dblclick', (e) => {
+            L.DomEvent.stopPropagation(e);
+            if (isGridLocked) return;
+
+            const newName = prompt("修改地標名稱：", lmObj.name);
+            if (newName && newName.trim() !== "") lmObj.name = newName.trim();
+
+            const newUrl = prompt("修改圖片網址連結：", lmObj.imgUrl);
+            if (newUrl && newUrl.trim() !== "") lmObj.imgUrl = newUrl.trim();
+
+            const newW = prompt("調整圖片基礎大小 (像素寬度，預設50)：", lmObj.imgWidth);
+            if (newW && !isNaN(newW)) lmObj.imgWidth = parseInt(newW);
+
+            const newT = prompt("調整名稱字體基礎大小 (像素，預設12)：", lmObj.textSize);
+            if (newT && !isNaN(newT)) lmObj.textSize = parseInt(newT);
+
+            lmMarker.setIcon(L.divIcon({
+                className: 'custom-landmark-node',
+                html: generateHtml(lmObj),
+                iconSize: [160, 160],
+                iconAnchor: [80, 155]
+            }));
+        });
+
+        // 右鍵雙擊刪除地標
+        lmMarker.on('contextmenu', (e) => {
+            L.DomEvent.stopPropagation(e);
+            if (e.originalEvent) e.originalEvent.preventDefault();
+            if (isGridLocked) return;
+
+            const now = Date.now();
+            if (lmMarker.lastRightClick && (now - lmMarker.lastRightClick < 300)) {
+                map.removeLayer(lmMarker);
+                customLandmarks = customLandmarks.filter(l => l.id !== lmObj.id);
+            } else { lmMarker.lastRightClick = now; }
+        });
+
+        // 地標拖曳定位
+        lmMarker.on('mousedown', (e) => {
+            L.DomEvent.stopPropagation(e);
+            if (isGridLocked) return;
+
+            map.dragging.disable();
+            function onLmDrag(event) {
+                lmMarker.setLatLng(event.latlng);
+                lmObj.coords = [event.latlng.lat, event.latlng.lng];
+            }
+            map.on('mousemove', onLmDrag);
+            window.addEventListener('mouseup', function onMouseUp() {
+                map.off('mousemove', onLmDrag);
+                map.dragging.enable();
+                window.removeEventListener('mouseup', onMouseUp);
+            });
+        });
+    }
+
+    // 建立文字標籤圖層
+    function createTextboxLayer(textObj) {
+        const txtIcon = L.divIcon({
+            className: 'zoom-responsive-textbox',
+            html: `<div class="txt-content" style="--base-size: ${textObj.size}px;">${textObj.text}</div>`,
+            iconAnchor: [3, 6]
+        });
+        const txtMarker = L.marker(textObj.coords, { icon: txtIcon }).addTo(map);
+        textObj.marker = txtMarker;
+        txtMarker.on('click', (e) => { L.DomEvent.stopPropagation(e); });
+        txtMarker.on('dblclick', (e) => {
+            L.DomEvent.stopPropagation(e); if (isGridLocked) return;
+            const newTxt = prompt("請修改標籤內容：", textObj.text);
+            if (newTxt && newTxt.trim() !== "") textObj.text = newTxt.trim();
+            const newSize = prompt("請調整文字基礎尺寸大小：", textObj.size);
+            if (newSize && !isNaN(newSize)) textObj.size = parseInt(newSize);
+            txtMarker.setIcon(L.divIcon({
+                className: 'zoom-responsive-textbox',
+                html: `<div class="txt-content" style="--base-size: ${textObj.size}px;">${textObj.text}</div>`,
+                iconAnchor: [3, 6]
+            }));
+        });
+        txtMarker.on('contextmenu', (e) => {
+            L.DomEvent.stopPropagation(e); if (e.originalEvent) e.originalEvent.preventDefault(); if (isGridLocked) return;
+            const now = Date.now();
+            if (txtMarker.lastRightClick && (now - txtMarker.lastRightClick < 300)) {
+                map.removeLayer(txtMarker); customTextboxes = customTextboxes.filter(t => t.id !== textObj.id);
+            } else { txtMarker.lastRightClick = now; }
+        });
+        txtMarker.on('mousedown', (e) => {
+            L.DomEvent.stopPropagation(e); if (isGridLocked) return;
+            map.dragging.disable();
+            function onTxtDrag(event) { txtMarker.setLatLng(event.latlng); textObj.coords = [event.latlng.lat, event.latlng.lng]; }
+            map.on('mousemove', onTxtDrag);
+            window.addEventListener('mouseup', function onMouseUp() { map.off('mousemove', onTxtDrag); map.dragging.enable(); window.removeEventListener('mouseup', onMouseUp); });
+        });
+    }
+
+    // 軌道節點層
+    function createNodeMarkerLayer(nodeObj) {
+        const marker = L.circleMarker(nodeObj.coords, { radius: 2.5 }).addTo(map);
+        nodeObj.marker = marker; refreshSingleMarkerStyle(nodeObj);
+        marker.on('click', (e) => { L.DomEvent.stopPropagation(e); });
+        marker.on('dblclick', (e) => {
+            L.DomEvent.stopPropagation(e); if (isGridLocked) return;
+            const stationName = prompt("請輸入或變更捷運站名稱:", nodeObj.name || "");
+            if (!stationName || stationName.trim() === "") return;
+            activeNodeId = nodeObj.id; convertToStation(nodeObj, stationName.trim()); refreshAllMarkerStyles();
+        });
+        marker.on('contextmenu', (e) => {
+            L.DomEvent.stopPropagation(e); if (e.originalEvent) e.originalEvent.preventDefault(); if (isGridLocked) return;
+            const now = Date.now();
+            if (marker.lastRightClick && (now - marker.lastRightClick < 300)) {
+                clearTimeout(marker.rightClickTimer); map.removeLayer(marker);
+                metroLines.forEach(line => { line.nodeIds = line.nodeIds.filter(nid => nid !== nodeObj.id); });
+                masterNodes = masterNodes.filter(n => n.id !== nodeObj.id);
+                if (activeNodeId === nodeObj.id) activeNodeId = masterNodes.length > 0 ? masterNodes[masterNodes.length - 1].id : null;
+                updateAllPolylines(); refreshAllMarkerStyles();
+            } else {
+                marker.lastRightClick = now;
+                marker.rightClickTimer = setTimeout(() => {
+                    activeNodeId = nodeObj.id;
+                    const matchedLine = metroLines.find(l => l.nodeIds.includes(nodeObj.id));
+                    if (matchedLine && matchedLine.id !== activeLineId) { activeLineId = matchedLine.id; document.getElementById('statusColorBox').style.backgroundColor = matchedLine.color; }
+                    refreshAllMarkerStyles();
+                }, 250);
+            }
+        });
+        marker.on('mousedown', (e) => {
+            L.DomEvent.stopPropagation(e); if (isGridLocked) return;
+            map.dragging.disable();
+            function onMarkerDrag(event) { marker.setLatLng(event.latlng); nodeObj.coords = [event.latlng.lat, event.latlng.lng]; updateAllPolylines(); }
+            map.on('mousemove', onMarkerDrag);
+            window.addEventListener('mouseup', function onMouseUp() { map.off('mousemove', onMarkerDrag); map.dragging.enable(); window.removeEventListener('mouseup', onMouseUp); });
+        });
+    }
+
+    function convertToStation(nodeObj, stationName) {
+        nodeObj.type = 'station'; nodeObj.name = stationName; refreshSingleMarkerStyle(nodeObj);
+        nodeObj.marker.unbindTooltip();
+        nodeObj.marker.bindTooltip(nodeObj.name, { permanent: true, direction: 'top', offset: [0, -7], className: 'station-lbl-blue' });
+        nodeObj.marker.bringToFront();
+    }
+
+    function refreshSingleMarkerStyle(nodeObj) {
+        const marker = nodeObj.marker; if (!marker) return;
+        const isCurrentActive = (nodeObj.id === activeNodeId) && !isGridLocked;
+        const passingLines = metroLines.filter(line => line.nodeIds.includes(nodeObj.id));
+        const isMultiLaneHub = passingLines.length > 1;
+        if (nodeObj.type === 'station') {
+            marker.setStyle({ radius: isMultiLaneHub ? 9 : 7, fillColor: '#ffffff', color: isCurrentActive ? '#f59e0b' : (isMultiLaneHub ? '#1e1b4b' : '#18181b'), weight: isCurrentActive ? 5 : (isMultiLaneHub ? 4 : 2.5), fillOpacity: 1 });
+        } else {
+            marker.setStyle({ radius: isCurrentActive ? 5 : (isMultiLaneHub ? 4 : 2.5), fillColor: isCurrentActive ? '#f59e0b' : (isMultiLaneHub ? '#4b5563' : '#71717a'), color: isCurrentActive ? '#d97706' : '#52525b', weight: isMultiLaneHub ? 2 : 1, fillOpacity: 0.9 });
+        }
+        if (isMultiLaneHub || isCurrentActive || nodeObj.type === 'station') marker.bringToFront();
+    }
+
+    function refreshAllMarkerStyles() { masterNodes.forEach(node => refreshSingleMarkerStyle(node)); }
+    function triggerFileLoad() { document.getElementById('fileInput').click(); }
+
+    // JSON 專案載入
+    function loadCustomJson(event) {
+        const file = event.target.files[0]; if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const payload = JSON.parse(e.target.result);
+                clearNetwork();
+                if (payload.masterNodes && payload.metroLines) {
+                    masterNodes = payload.masterNodes;
+                    metroLines = payload.metroLines;
+                    customTextboxes = payload.customTextboxes || [];
+                    customLandmarks = payload.customLandmarks || []; 
+                    
+                    metroLines.forEach(line => { line.polyline = L.polyline([], { color: line.color, weight: 5, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }).addTo(map); });
+                    masterNodes.forEach(node => createNodeMarkerLayer(node));
+                    masterNodes.forEach(node => { if (node.type === 'station' && node.name) convertToStation(node, node.name); });
+                    customTextboxes.forEach(txtObj => createTextboxLayer(txtObj));
+                    customLandmarks.forEach(lmObj => createLandmarkLayer(lmObj));
+
+                    activeLineId = metroLines[metroLines.length - 1].id;
+                    activeNodeId = masterNodes.length > 0 ? masterNodes[masterNodes.length - 1].id : null;
+                    document.getElementById('statusColorBox').style.backgroundColor = metroLines.find(l=>l.id===activeLineId).color;
+
+                    updateAllPolylines(); refreshAllMarkerStyles(); syncZoomScale();
+                } else { alert("架構不符。"); }
+            } catch (err) { alert("讀取失敗。"); }
+        };
+        reader.readAsText(file);
+    }
+
+    // JSON 專案存檔
+    function exportNetwork() {
+        if (masterNodes.length === 0 && customTextboxes.length === 0 && customLandmarks.length === 0) { alert("畫布為空。"); return; }
+        const cleanNodes = masterNodes.map(n => ({ id: n.id, type: n.type, coords: n.coords, name: n.name }));
+        const cleanLines = metroLines.map(l => ({ id: l.id, color: l.color, nodeIds: l.nodeIds }));
+        const cleanTexts = customTextboxes.map(t => ({ id: t.id, text: t.text, coords: t.coords, size: t.size }));
+        const cleanLandmarks = customLandmarks.map(l => ({ id: l.id, name: l.name, imgUrl: l.imgUrl, imgWidth: l.imgWidth, textSize: l.textSize, coords: l.coords }));
+
+        const exportPayload = { masterNodes: cleanNodes, metroLines: cleanLines, customTextboxes: cleanTexts, customLandmarks: cleanLandmarks };
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportPayload));
+        const anchor = document.createElement('a');
+        anchor.setAttribute("href", dataStr); anchor.setAttribute("download", "animated_landmark_project.json");
+        document.body.appendChild(anchor); anchor.click(); anchor.remove();
+    }
+
+    function clearNetwork() {
+        masterNodes.forEach(n => { if (n.marker) map.removeLayer(n.marker); });
+        metroLines.forEach(l => { if (l.polyline) map.removeLayer(l.polyline); });
+        customTextboxes.forEach(t => { if (t.marker) map.removeLayer(t.marker); });
+        customLandmarks.forEach(l => { if (l.marker) map.removeLayer(l.marker); }); 
+        
+        masterNodes = []; customTextboxes = []; customLandmarks = [];
+        metroLines = [{ id: "line_0", color: "#0070bc", nodeIds: [], polyline: null }];
+        activeLineId = "line_0"; activeNodeId = null; nodeCounter = 0; textCounter = 0; landmarkCounter = 0;
+        isTextModeActive = false; isLandmarkModeActive = false;
+        if(isGridLocked) toggleGridLock();
+        
+        document.getElementById('btnTextMode').classList.remove('active'); document.getElementById('btnTextMode').innerText = "📝 Add Textbox";
+        document.getElementById('btnLandmarkMode').classList.remove('active'); document.getElementById('btnLandmarkMode').innerText = "🖼️ Add Landmark";
+        
+        metroLines[0].polyline = L.polyline([], { color: '#0070bc', weight: 5, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }).addTo(map);
+        document.getElementById('statusColorBox').style.backgroundColor = "#0070bc";
+        syncZoomScale();
+    }
+
+    houses.forEach(house => {
+        const pin = L.circleMarker([house.lat, house.lng], { radius: 9, fillColor: "#2563eb", color: "#ffffff", weight: 2, opacity: 1, fillOpacity: 0.95 }).addTo(map);
+        pin.on('click', (e) => {
+            L.DomEvent.stopPropagation(e);
+            houses.forEach(h => h.leafletMarker.setStyle({ fillColor: "#2563eb", radius: 9, weight: 2 }));
+            pin.setStyle({ fillColor: "#dc2626", radius: 14, weight: 3 });
+            document.getElementById('houseNo').innerText = `物件 #${house.no}`;
+            document.getElementById('housePrice').innerText = `NT$ ${house.cash.toLocaleString()}`;
+            document.getElementById('houseLayout').innerText = `${house.r}房 / ${house.h}廳 / ${house.b}衛`;
+            document.getElementById('houseAddr').innerText = house.address;
+            document.getElementById('houseImg').src = house.img;
+            document.getElementById('houseLink').href = house.link;
+            document.getElementById('appContainer').classList.add('split-view');
+            setTimeout(() => { map.invalidateSize(); }, 300);
+        });
+        house.leafletMarker = pin;
+    });
+</script>
+</body>
+</html>
